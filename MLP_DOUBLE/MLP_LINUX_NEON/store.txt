@@ -1,0 +1,39 @@
+// std::unique_ptr<std::vector<std::size_t>> createDynVec()
+// {
+//   auto vec = std::make_unique<std::vector<std::size_t>>();
+//   return vec;
+// }
+
+// std::unique_ptr<std::vector<double>> createDynDblVec()
+// {
+//   auto vec = std::make_unique<std::vector<double>>();
+//   return vec;
+// }
+
+// std::vector<std::uint8_t> getTrueLabels(std::size_t logits_size, std::size_t label)
+// {
+//   std::vector<std::uint8_t> trueLabels(logits_size);
+
+//   // Set the one-hot encoded labels 
+//   for(std::size_t i = 0; i < logits_size; ++i)
+//   {
+//     trueLabels[i] = i == label ? 1 : 0;
+//   }
+
+//   return trueLabels;
+// }
+
+// double categCrossEntropy(const std::vector<double>& prob, const std::vector<std::uint8_t>& trueLabels)
+// {
+//   double loss = 0.0;
+
+//   for(std::size_t i = 0; i < trueLabels.size(); ++i)
+//   {
+//     if(trueLabels[i] == 1)
+//     {
+//       loss -= std::log(prob[i]);
+//     }
+//   }
+
+//   return loss;
+// }

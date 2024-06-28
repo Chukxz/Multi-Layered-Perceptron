@@ -1,0 +1,26 @@
+// std::unique_ptr<std::vector<std::size_t>> createDynVec()
+// {
+//   auto vec = std::make_unique<std::vector<std::size_t>>();
+//   return vec;
+// }
+
+// std::unique_ptr<std::vector<double>> createDynDblVec()
+// {
+//   auto vec = std::make_unique<std::vector<double>>();
+//   return vec;
+// }
+
+// double categCrossEntropy(const std::vector<double>& prob, const std::vector<std::uint8_t>& trueLabels)
+// {
+//   double loss = 0.0;
+
+//   for (std::size_t i = 0; i < trueLabels.size(); ++i)
+//   {
+//     if(trueLabels[i] == 1)
+//     {
+//       loss -= std::log(prob[i]);
+//     }
+//   }
+
+//   return loss;
+// }

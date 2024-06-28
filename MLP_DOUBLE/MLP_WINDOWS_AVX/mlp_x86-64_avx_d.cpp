@@ -110,10 +110,10 @@ namespace mlp_d
       gradientCrossEntWthSftMax(const std::vector<double> &logits,
       const std::vector<std::uint8_t> &trueLabels),
 
-      layersDerivs(std::size_t label, std::size_t p_offset, std::size_t a_offset, std::size_t layer, std::vector<double> prev_g_d_arr,
+      layersDerivs(std::size_t label, std::size_t p_offset, std::size_t a_offset, std::size_t layer, std::vector<double> velocities,
       const std::vector<double> &preactvs, const std::vector<double> &actvs, std::vector<double> &cActMat);
 
-      void backProp(std::size_t label, std::vector<double> &grad_arr, std::vector<double> &prev_g_d_arr,
+      void backProp(std::size_t label, std::vector<double> &gradients, std::vector<double> &velocities,
       const std::vector<double> &preactvs, const std::vector<double> &actvs);
 
       protected:
@@ -123,8 +123,8 @@ namespace mlp_d
       double _alpha, double _lambda, double _i_dropout, double _h_dropout, const char *_label_file, const char *_image_file,
       NeuralNetwork *_NN);
       ~SGD();
-      void initSGD(std::size_t batch_offset, double _eta, std::vector<double> &prev_g_d_arr);
-      void initSGDThread(std::size_t batch_offset, std::size_t i, std::vector<double> &grad_arr, std::vector<double> &prev_g_d_arr, std::size_t pix_size);
+      void initSGD(std::size_t batch_offset, double _eta, std::vector<double> &previous_weights);
+      void initSGDThread(std::size_t batch_offset, std::size_t i, std::vector<double> &gradients, std::vector<double> &velocities, std::size_t pix_size);
     };
 
 
@@ -598,8 +598,6 @@ namespace mlp_d
       std::string dir_name = "TRAINED_NN";
       checkDir(dir_name);
 
-      if(running.load())
-      {
       std::string path_prefix = dir_name + "/NN_" + std::to_string(time(nullptr));
       std::string path = path_prefix + ".bin";
       const char *filename = path.c_str();
@@ -610,15 +608,14 @@ namespace mlp_d
       
       for(std::size_t i = 0; i < len; ++i) temp_arr[i] = arr[i];
 
-        fptr = fopen(filename, "wb");
-        fwrite(&temp_arr, __SIZEOF_DOUBLE__, len, fptr);
-        fclose(fptr);
-        delete[] temp_arr;
+      fptr = fopen(filename, "wb");
+      fwrite(&temp_arr, __SIZEOF_DOUBLE__, len, fptr);
+      fclose(fptr);
+      delete[] temp_arr;
 
-        const char* pre_path = path_prefix.c_str();
-        std::cout << "Neural Network saved to " << filename << ".\n";
-        saveNNLossLog(pre_path, loss, true, 0, total);
-      }
+      const char* pre_path = path_prefix.c_str();
+      std::cout << "Neural Network saved to " << filename << ".\n";
+      saveNNLossLog(pre_path, loss, true, 0, total);
     }
 
     void saveNNLossLog(const char* pre_path, double loss, bool train, std::size_t suc, std::size_t total)
@@ -1098,37 +1095,53 @@ namespace mlp_d
 
     SGD::~SGD(){};
 
-    void SGD::initSGD(std::size_t batch_offset, double _eta, std::vector<double> &prev_g_d_arr)
+    void SGD::initSGD(std::size_t batch_offset, double _eta, std::vector<double> &previous_weights)
     {
       eta = _eta;
       std::size_t pix_size = layers_list[0];
       std::vector<double> gradients(NN->_offset.p_offset);
       std::vector<std::thread*> thread_ptrs(batch_size);
-      std::vector<std::vector<double>> thread_gradients_ptrs(batch_size, std::vector<double>(NN->_offset.p_offset));
+
+      std::vector<std::vector<double>> 
+      thread_gradients(batch_size, std::vector<double>(NN->_offset.p_offset)),
+      thread_velocities(batch_size, std::vector<double>(NN->_offset.p_offset));
+
+      for (std::size_t i = 0; i < batch_size; ++i)
+      {
+        add_vectors_avx_double(thread_velocities[i], previous_weights, thread_velocities[i], 0, thread_velocities[i].size());
+      }
 
       for(std::size_t i = 0; i < batch_size; ++i)
       {
         if(!running.load()) return;
-        thread_ptrs[i] = new std::thread(SGD::initSGDThread, this, batch_offset, i, std::ref(thread_gradients_ptrs[i]), std::ref(prev_g_d_arr), pix_size);
+        thread_ptrs[i] = new std::thread(SGD::initSGDThread, this, batch_offset, i, std::ref(thread_gradients[i]), std::ref(thread_velocities[i]), pix_size);
       }
 
       if(running.load())
       {
+        // Terminate threads
         for (std::size_t i = 0; i < batch_size; ++i) thread_ptrs[i]->join();
 
-        for (std::size_t i = 0; i < batch_size; ++i)
+        // Sum up thread outputs and store
+        for (std::size_t i = 1; i < batch_size; ++i)
         {
-          add_vectors_avx_double(gradients, thread_gradients_ptrs[i], gradients, 0, gradients.size());
+          add_vectors_avx_double(thread_gradients[0], thread_gradients[i], thread_gradients[0], 0, thread_gradients[0].size());
+          add_vectors_avx_double(thread_velocities[0], thread_velocities[i], thread_velocities[0], 0, thread_velocities[0].size());
         }
 
+        // Divide summed up thread outputs by the batch size to get the mean value and update the gradients with the mean value.
         std::vector<double> batch_size_vec(NN->_offset.p_offset);
         batch_size_vec.assign(batch_size_vec.size(), static_cast<double>(batch_size));
-        div_vectors_avx_double(gradients, batch_size_vec, gradients, 0, gradients.size());
+        div_vectors_avx_double(thread_gradients[0], batch_size_vec, thread_gradients[0], 0, thread_gradients[0].size());
+        add_vectors_avx_double(gradients, thread_gradients[0], gradients, 0, gradients.size());
 
-        prev_g_d_arr.assign(prev_g_d_arr.size(), 0.0);
-        add_vectors_avx_double(prev_g_d_arr, gradients, prev_g_d_arr, 0, prev_g_d_arr.size());
+        // Update the previous weights
+        div_vectors_avx_double(thread_velocities[0], batch_size_vec, thread_velocities[0], 0, thread_velocities[0].size());
+        previous_weights.assign(previous_weights.size(), 0.0);
+        add_vectors_avx_double(previous_weights, thread_velocities[0], previous_weights, 0, previous_weights.size());
 
-        for(std::size_t i = 0; i < batch_size; ++i)
+        // Free thread pointers
+        for (std::size_t i = 0; i < batch_size; ++i)
         {
           free(thread_ptrs[i]);
         }
@@ -1137,7 +1150,7 @@ namespace mlp_d
       }
     }
 
-    void SGD::initSGDThread(std::size_t batch_offset, std::size_t i, std::vector<double> &grad_arr, std::vector<double> &prev_g_d_arr, std::size_t pix_size)
+    void SGD::initSGDThread(std::size_t batch_offset, std::size_t i, std::vector<double> &gradients, std::vector<double> &velocities, std::size_t pix_size)
     {
       std::size_t index = rand_list[batch_offset + i];
       std::size_t label = readLabel(label_file, index);
@@ -1146,15 +1159,15 @@ namespace mlp_d
       preactvs(NN->_offset.p_a_offset),
       actvs(NN->_offset.a_offset);
       NN->forwardPassExt(image_data, i_dropout, h_dropout, preactvs, actvs);
-      backProp(label, grad_arr, prev_g_d_arr, preactvs, actvs);
+      backProp(label, gradients, velocities, preactvs, actvs);
     }
 
-    void SGD::backProp(std::size_t label, std::vector<double> &grad_arr, std::vector<double> &prev_g_d_arr,
+    void SGD::backProp(std::size_t label, std::vector<double> &gradients, std::vector<double> &velocities,
     const std::vector<double> &preactvs, const std::vector<double> &actvs)
     { 
       std::size_t layer = layers_list.size() - 1;
       std::vector<double> emptyCActMat;
-      grad_arr = layersDerivs(label, NN->_offset.p_offset, NN->_offset.a_offset, layer, prev_g_d_arr, preactvs, actvs, emptyCActMat);
+      gradients = layersDerivs(label, NN->_offset.p_offset, NN->_offset.a_offset, layer, velocities, preactvs, actvs, emptyCActMat);
     }
 
     std::vector<double> SGD::gradientCrossEntWthSftMax(const std::vector<double> &logits,
@@ -1174,7 +1187,7 @@ namespace mlp_d
     }
 
     std::vector<double> SGD::layersDerivs(std::size_t label, std::size_t p_offset, std::size_t a_offset, std::size_t layer,
-    std::vector<double> prev_g_d_arr, const std::vector<double> &preactvs, const std::vector<double> &actvs, std::vector<double> &cActMat)
+    std::vector<double> velocities, const std::vector<double> &preactvs, const std::vector<double> &actvs, std::vector<double> &cActMat)
     {
       std::size_t
       l = layers_list[layer],
@@ -1186,7 +1199,7 @@ namespace mlp_d
 
       std::vector<double> 
       layer_weights = NN->NN_layers[layer]->weights,
-      grad_arr(l * (1 + p));
+      gradients(l * (1 + p));
 
       if (layer == layers_list.size() - 1)
       {
@@ -1220,25 +1233,24 @@ namespace mlp_d
 
         for (std::size_t k = 0; k < p; ++k)
         {
-          double 
-          pre_delta_weight = -eta * actvs[k + new_a_offset - p] * z_vals * cActMat[j],
-          momentum_factor = alpha * prev_g_d_arr[new_p_offset + j * p + k],
-          weight_decay_factor = lambda * eta * layer_weights[j * p + k],
-          delta_weight = pre_delta_weight + momentum_factor - weight_decay_factor;
-
-          grad_arr[j * p + k] = delta_weight;
+          std::size_t index_g = j * p + k;
+          std::size_t index_v = new_p_offset + index_g;
+          double gradient_delta = actvs[k + new_a_offset - p] * z_vals * cActMat[j];
+          velocities[index_v] = alpha * velocities[index_v] + (1 - alpha) * gradient_delta;
+          double decay = lambda * layer_weights[index_g];
+          gradients[index_g] = -eta * (velocities[index_v] + decay);        
         }
 
-        grad_arr[l * p + j] = -eta * z_vals * cActMat[j];
+        gradients[l * p + j] = -eta * z_vals * cActMat[j];
       }
 
       if (layer > 1) 
       {
-        std::vector<double> prev_grad_arr = layersDerivs(label, new_p_offset, new_a_offset, layer - 1, prev_g_d_arr, preactvs, actvs, cActMat);
-        grad_arr = copyMergeDblVecs(prev_grad_arr, grad_arr);
+        std::vector<double> prev_gradients = layersDerivs(label, new_p_offset, new_a_offset, layer - 1, velocities, preactvs, actvs, cActMat);
+        gradients = copyMergeDblVecs(prev_gradients, gradients);
       }
 
-      return grad_arr;
+      return gradients;
     }
 
 

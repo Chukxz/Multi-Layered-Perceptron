@@ -11,7 +11,7 @@ int main()
   layers_len = 4;
   unsigned layers_list[layers_len] = {784, 32, 32, 10};
 
-  double learning_rate = 0.01;
+  double learning_rate = 0.1;
   unsigned batch_size = 16;
   unsigned epoch_num = 5;
   double momentum = 0.9;

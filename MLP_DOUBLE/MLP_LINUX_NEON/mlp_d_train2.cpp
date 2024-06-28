@@ -8,7 +8,7 @@ int main()
   const char *train_label_file = "./train-labels.idx1-ubyte";
   int train_len = 60000;
 
-  double learning_rate = 0.01;
+  double learning_rate = 0.1;
   unsigned batch_size = 16;
   unsigned epoch_num = 10;
   double momentum = 0.9;

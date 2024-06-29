@@ -107,9 +107,6 @@ namespace mlp_d
       NeuralNetwork *NN;
       std::size_t mark;
 
-      std::vector<double> gradientCrossEntWthSftMax(const std::vector<double> &logits,
-      const std::vector<std::uint8_t> &trueLabels);
-
       std::vector<double>
 
       gradientCrossEntWthSftMax(const std::vector<double> &logits,
@@ -571,7 +568,7 @@ namespace mlp_d
 
     std::vector<std::uint8_t> readImage(const char *filename, std::size_t row, std::size_t pix_size)
     {
-      char x[pix_size];
+      std::vector<char> x(pix_size);
       FILE *fptr;
       std::vector<std::uint8_t> image_data(pix_size);
 
@@ -585,7 +582,7 @@ namespace mlp_d
       else
       {
         fseek(fptr, 16 + (row * pix_size), SEEK_SET);
-        fread(x, sizeof(char), pix_size, fptr);
+        fread(x.data(), sizeof(char), pix_size, fptr);
         fclose(fptr);
 
         for (std::size_t i = 0; i < pix_size; ++i)
@@ -767,18 +764,15 @@ namespace mlp_d
       return dropout_list;
     }
 
-    std::size_t getLabel(NeuralNetwork &NN)
+    std::size_t getLabel(std::vector<double> logits, std::size_t last_layer_len)
     {
-      std::size_t layers_len = NN.layers_list.size();
-      std::vector<double> last_layer_actvs = NN.NN_layers[layers_len-1]->actvs;
-      std::size_t last_layer_len = NN.NN_layers[layers_len - 1]->getNum();
       double max = std::numeric_limits<double>::min();
       std::size_t max_index = -1;
 
       for (std::size_t i = 0; i < last_layer_len; ++i)
       {
-        bool check = last_layer_actvs[i] > (max);
-        max = check ? last_layer_actvs[i] : max;
+        bool check = logits[i] > (max);
+        max = check ? logits[i] : max;
         max_index = check ? i : max_index;
       }
 
@@ -923,7 +917,7 @@ namespace mlp_d
       {
         std::size_t n = i < (thread_num - 1) ? num : last;  
         if (!running.load()) break;
-        thr[i] = new std::thread(meanCatCrsEntThread, std::ref(rand_list), n, std::ref(layers_list), i_dropout, h_dropout, label_file, image_file, NN, i, losses, pix_size);
+        thr[i] = new std::thread(&meanCatCrsEntThread, std::ref(rand_list), n, std::ref(layers_list), i_dropout, h_dropout, label_file, image_file, NN, i, losses, pix_size);
       }
 
       if(running.load())
@@ -1126,7 +1120,7 @@ namespace mlp_d
       for(std::size_t i = 0; i < batch_size; ++i)
       {
         if(!running.load()) return;
-        thread_ptrs[i] = new std::thread(SGD::initSGDThread, this, batch_offset, i, std::ref(thread_gradients[i]), std::ref(thread_velocities[i]), pix_size);
+        thread_ptrs[i] = new std::thread(&SGD::initSGDThread, this, batch_offset, i, std::ref(thread_gradients[i]), std::ref(thread_velocities[i]), pix_size);
       }
 
       if(running.load())
@@ -1535,14 +1529,14 @@ namespace mlp_d
     std::mutex input_mutex;
     std::string input_string;
 
-    std::thread escHelpExit(escapeHelpExit);
-    std::thread escHelp(escapeHelp);
+    std::thread escHelpExit(&escapeHelpExit);
+    std::thread escHelp(&escapeHelp);
     escHelp.join();
 
-    std::thread esc_thread(escape, std::ref(input_mutex), std::ref(input_string));  
+    std::thread esc_thread(&escape, std::ref(input_mutex), std::ref(input_string));  
     std::vector<std::size_t> _layers_list(layers_list, layers_list + layers_len);
     AALR aalr(_layers_list, _train_len, _eta, _batch_size, _epoch_num, _alpha, _lambda, i_dropout, h_dropout, train_label_file, train_image_file);
-    std::thread aalr_thread(AALR::runAALR, aalr, nullptr, _verbose);
+    std::thread aalr_thread(&AALR::runAALR, aalr, nullptr, _verbose);
 
     escHelpExit.join();
     esc_thread.join();
@@ -1565,10 +1559,10 @@ namespace mlp_d
     std::mutex input_mutex;
     std::string input_string;
 
-    std::thread escHelpExit(escapeHelpExit);
-    std::thread escHelp(escapeHelp);
+    std::thread escHelpExit(&escapeHelpExit);
+    std::thread escHelp(&escapeHelp);
     escHelp.join();
-    std::thread esc_thread(escape, std::ref(input_mutex), std::ref(input_string));
+    std::thread esc_thread(&escape, std::ref(input_mutex), std::ref(input_string));
     
     std::vector<double> input;
     std::vector<std::size_t> layers_list;
@@ -1582,7 +1576,7 @@ namespace mlp_d
       Vec2NN(input, &NeuralNet, 0, 0); // Set the values of the neural network's weights and biases to the values of the input double array.
       
       AALR aalr(layers_list, _train_len, _eta, _batch_size, _epoch_num, _alpha, _lambda, i_dropout, h_dropout, train_label_file, train_image_file);
-      std::thread aalr_thread(AALR::runAALR, aalr, nullptr, _verbose);
+      std::thread aalr_thread(&AALR::runAALR, aalr, nullptr, _verbose);
       aalr_thread.join();
     }
     escHelpExit.join();
@@ -1690,12 +1684,12 @@ namespace mlp_d
     std::mutex input_mutex;
     std::string input_string;
 
-    std::thread escHelpExit(escapeHelpExit);
-    std::thread escHelp(escapeHelp);
+    std::thread escHelpExit(&escapeHelpExit);
+    std::thread escHelp(&escapeHelp);
     escHelp.join();
 
-    std::thread esc_thread(escape, std::ref(input_mutex), std::ref(input_string));
-    std::thread test_thread(testNNThread, mlp_filename, _test_len, i_dropout, h_dropout, test_label_file, test_image_file, _verbose, validate);
+    std::thread esc_thread(&escape, std::ref(input_mutex), std::ref(input_string));
+    std::thread test_thread(&testNNThread, mlp_filename, _test_len, i_dropout, h_dropout, test_label_file, test_image_file, _verbose, validate);
 
     escHelpExit.join();
     esc_thread.join();

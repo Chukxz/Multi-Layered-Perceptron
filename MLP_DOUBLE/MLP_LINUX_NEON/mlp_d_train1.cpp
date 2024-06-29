@@ -8,7 +8,7 @@ int main()
   unsigned
   train_len = 60000,
   layers_len = 4;
-  unsigned layers_list[layers_len] = {784, 32, 32, 10};
+  unsigned layers_list[4] = {784, 32, 32, 10};
 
   double learning_rate = 0.1;
   unsigned batch_size = 16;

@@ -78,8 +78,8 @@ namespace mlp_d
       protected:
       
       public:
-      offsets &_offset;
       const std::vector<std::size_t> &layers_list;
+      offsets &_offset;
       NeuralNetwork(const std::vector<std::size_t> &layers_list, offsets &_offset, bool randomize);
       ~NeuralNetwork();
       void addLayer(std::size_t index, bool randomize);
@@ -94,8 +94,8 @@ namespace mlp_d
     class SGD
     {
       private:
-      std::size_t train_len;
       std::vector<std::size_t> &layers_list;
+      std::size_t train_len;
       std::size_t batch_size;
       double eta;
       double alpha;
@@ -133,18 +133,18 @@ namespace mlp_d
     class AALR
     {
       private:
-      std::size_t train_len;
       std::vector<std::size_t> &layers_list;
+      std::size_t train_len;
+      double eta;
       std::size_t batch_size;
       std::size_t epoch_num;
       std::size_t epoch;
-      double eta;
       double alpha;
       double lambda;
       double i_dropout;
       double h_dropout;
-      const char *image_file;
       const char *label_file;
+      const char *image_file;
       std::vector<double> prev_gradient_deltas;
       std::vector<double> checkpoint;
 
@@ -179,8 +179,8 @@ namespace mlp_d
     std::vector<double> copyMergeDblVecs(const std::vector<double> &vecA, const std::vector<double> &vecB);
     std::vector<double> moveMergeDblVecs(const std::vector<double> &&vecA, const std::vector<double> &&vecB);
 
-    void NN2Vec(NeuralNetwork* NN, std::vector<double> &arr, int offset, int flag);
-    void Vec2NN(std::vector<double> &arr, NeuralNetwork* NN, int offset, int flag);
+    void NN2Vec(NeuralNetwork* NN, std::vector<double> &arr, std::size_t offset, int flag);
+    void Vec2NN(std::vector<double> &arr, NeuralNetwork* NN, std::size_t offset, int flag);
 
     std::size_t readLabel(const char *filename, std::size_t row);
     std::vector<std::uint8_t> readImage(const char *filename, std::size_t row, std::size_t pix_size);
@@ -466,7 +466,7 @@ namespace mlp_d
       return merged_vector;
     }
 
-    void NN2Vec(NeuralNetwork* NN, std::vector<double> &arr, int offset, int flag)
+    void NN2Vec(NeuralNetwork* NN, std::vector<double> &arr, std::size_t offset, int flag)
     {
       const std::size_t layers_len = NN->layers_list.size();
       const std::vector<std::size_t> layers_list = NN->layers_list;
@@ -505,7 +505,7 @@ namespace mlp_d
       }
     }
 
-    void Vec2NN(std::vector<double> &arr, NeuralNetwork* NN, int offset, int flag)
+    void Vec2NN(std::vector<double> &arr, NeuralNetwork* NN, std::size_t offset, int flag)
     {
       const std::size_t layers_len = NN->layers_list.size();
       const std::vector<std::size_t> layers_list = NN->layers_list;
@@ -598,7 +598,7 @@ namespace mlp_d
 
     void saveNNVec(std::vector<double>& arr, double loss, std::size_t total)
     {
-      FILE *fptr;
+      // FILE *file;
 
       std::string dir_name = "TRAINED_NN";
       checkDir(dir_name);
@@ -607,16 +607,33 @@ namespace mlp_d
       std::string path = path_prefix + ".bin";
       const char *filename = path.c_str();
 
-      std::size_t len = arr.size();
-      double *temp_arr = new double[len];
-      checkPtr(temp_arr);
-      
-      for(std::size_t i = 0; i < len; ++i) temp_arr[i] = arr[i];
+      std::ofstream file(filename, std::ios::binary);
+      if (!file)
+      {
+        std::cerr << "Error opening file for writing\n";
+        running.store(false);
+        return;
+      }
 
-      fptr = fopen(filename, "wb");
-      fwrite(&temp_arr, __SIZEOF_DOUBLE__, len, fptr);
-      fclose(fptr);
-      delete[] temp_arr;
+      // Write the size of the vector
+      std::size_t size = arr.size();
+      file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+      if (!file)
+      {
+        std::cerr << "Error writing vector size to file\n";
+        running.store(false);
+        return;
+      }
+
+      // Write the vector data
+      file.write(reinterpret_cast<const char*>(arr.data()), size * sizeof(double));
+      if (!file)
+      {
+        std::cerr << "Error writing vector data to file\n";
+        running.store(false);
+        return;
+      }
+      file.close();
 
       const char* pre_path = path_prefix.c_str();
       std::cout << "Neural Network saved to " << filename << ".\n";
@@ -662,39 +679,44 @@ namespace mlp_d
 
     void readNNVec(std::vector<double> &arr, std::vector<std::size_t> &layers_list, const char *filename)
     {
-      FILE *fptr;
-      double temp[2];
-
-      fptr = fopen(filename, "rb");
-      if(!fptr) 
+      std::ifstream file(filename, std::ios::binary);
+      if (!file)
       {
-        std::cerr << "File " << filename << " could not be opened." << std::endl;
+        std::cerr << "Error opening file for reading\n";
         running.store(false);
+        return;
       }
 
-      else
+      // Read th size of the vector
+      std::size_t size;
+      file.read(reinterpret_cast<char*>(&size), sizeof(size));
+      if (!file)
       {
-        fread(temp, __SIZEOF_DOUBLE__, 2, fptr);
-        std::size_t num = static_cast<std::size_t>(temp[0]);
-        std::size_t len = static_cast<std::size_t>(temp[1]);
-
-        double *temp_layers_list = new double[len], *temp_arr = new double[num];
-        checkPtr(temp_layers_list);
-        checkPtr(temp_arr);
-
-        if(running.load())
-        {
-          fread(temp_layers_list, __SIZEOF_DOUBLE__, len, fptr);
-          fread(temp_arr, __SIZEOF_DOUBLE__, num, fptr);
-          fclose(fptr);
-
-          for (std::size_t i = 0; i < len; ++i) layers_list.push_back(temp_layers_list[i]);
-          for(std::size_t i = 0; i < num; ++i) arr.push_back(temp_arr[i]);
-
-          // Free memory.
-          delete[] temp_layers_list;
-        }
+        std::cerr << "Error reading vector size from file\n";
+        running.store(false);
+        return;
       }
+
+      // Read the vector data
+      std::vector<double> vec(size);
+      file.read(reinterpret_cast<char*>(vec.data()), size * sizeof(double));
+      if (!file)
+      {
+        std::cerr << "Error reading vector data form file\n";
+        running.store(false);
+        return;
+      }
+      file.close();
+
+      std::size_t arr_len = static_cast<std::size_t>(vec[0]);
+      std::size_t layers_len = static_cast<std::size_t>(vec[1]);
+
+      for (std::size_t i = 0; i < layers_len; ++i)
+      {
+        layers_list[i] = vec[i + 2];
+      }
+
+      arr = sliceDblVec(vec, layers_len + 2, size);
     }
 
     double custom_round(double num, std::uint16_t dp)
@@ -1199,7 +1221,6 @@ namespace mlp_d
       l = layers_list[layer],
       p = layers_list[layer - 1],
       new_p_offset = p_offset - (l * (1 + p)),
-      bias_offset = p_offset - l,
       new_a_offset = a_offset - l,
       p_a_offset = new_a_offset - layers_list[0];
 
@@ -1417,8 +1438,8 @@ namespace mlp_d
 
         // Set the intial part of the output's double array which stores
         // the array size, layers array length and each layer's length values.
-        int q = 0;
-        for (int i = 0; i < pad; ++i)
+        std::size_t q = 0;
+        for (std::size_t i = 0; i < pad; ++i)
         {
           if (i == 0) output[i] = _offset.p_offset;
           else if (i == 1) output[i] = layers_len;

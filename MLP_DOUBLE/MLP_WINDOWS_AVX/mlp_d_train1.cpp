@@ -9,13 +9,13 @@ int main()
   unsigned
   train_len = 60000,
   layers_len = 4;
-  unsigned layers_list[layers_len] = {784, 32, 32, 10};
+  unsigned layers_list[4] = {784, 32, 32, 10};
 
-  double learning_rate = 0.1;
+  double learning_rate = 0.001;
   unsigned batch_size = 16;
   unsigned epoch_num = 5;
-  double momentum = 0.9;
-  double weight_decay = 0.8;
+  double momentum = 0.7;
+  double weight_decay = 0.02;
   double i_dropout = 0.2;
   double h_dropout = 0.5;
   bool verbose = true;

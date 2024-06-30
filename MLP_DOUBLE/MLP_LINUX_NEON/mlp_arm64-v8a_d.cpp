@@ -227,7 +227,7 @@ namespace mlp_d
       {
         if (!fs::create_directory(dir_name)) 
         {
-          std::cerr << "Failed to create directory" << dir_name << "." << std::endl;
+          std::cerr << "Failed to create directory " << dir_name << "." << std::endl;
           running.store(false);
         }
       }
@@ -598,8 +598,6 @@ namespace mlp_d
 
     void saveNNVec(std::vector<double>& arr, double loss, std::size_t total)
     {
-      // FILE *file;
-
       std::string dir_name = "TRAINED_NN";
       checkDir(dir_name);
 
@@ -607,6 +605,7 @@ namespace mlp_d
       std::string path = path_prefix + ".bin";
       const char *filename = path.c_str();
 
+      // Open the file for reading
       std::ofstream file(filename, std::ios::binary);
       if (!file)
       {
@@ -679,6 +678,7 @@ namespace mlp_d
 
     void readNNVec(std::vector<double> &arr, std::vector<std::size_t> &layers_list, const char *filename)
     {
+      // Open the file for reading
       std::ifstream file(filename, std::ios::binary);
       if (!file)
       {
@@ -687,7 +687,7 @@ namespace mlp_d
         return;
       }
 
-      // Read th size of the vector
+      // Read the size of the vector
       std::size_t size;
       file.read(reinterpret_cast<char*>(&size), sizeof(size));
       if (!file)
@@ -711,9 +711,10 @@ namespace mlp_d
       std::size_t arr_len = static_cast<std::size_t>(vec[0]);
       std::size_t layers_len = static_cast<std::size_t>(vec[1]);
 
+      layers_list = std::vector<std::size_t>(layers_len);
       for (std::size_t i = 0; i < layers_len; ++i)
       {
-        layers_list[i] = vec[i + 2];
+        layers_list[i] = static_cast<std::size_t>(vec[i + 2]);
       }
 
       arr = sliceDblVec(vec, layers_len + 2, size);
@@ -1690,10 +1691,10 @@ namespace mlp_d
       path_prefix = dir_name + "/NN_" + std::to_string(time(nullptr));
     }
     
-    if(!running.load()) return;
     const char* pre_path = path_prefix.c_str();
     saveNNLossLog(pre_path, overall_loss, false, n, _test_len);
     saveNNTestLabelLog(pre_path, label_data);
+    running.store(false);
   }
 
   extern "C" void testNN(const char *mlp_filename, unsigned _test_len, double i_dropout, double h_dropout, const char *test_label_file,

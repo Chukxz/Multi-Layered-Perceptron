@@ -1,2 +1,0 @@
-Neural network loss on training: 0.
-Number of images: 60000.
